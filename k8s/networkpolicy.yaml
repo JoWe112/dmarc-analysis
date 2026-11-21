@@ -1,0 +1,26 @@
+# Authentication is offloaded to the ingress controller / gateway. This policy
+# ensures the pods are only reachable through it (plus kubelet probes, which
+# are not subject to NetworkPolicy). Adjust the namespace labels to your cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dmarc-analysis
+  labels:
+    app.kubernetes.io/name: dmarc-analysis
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dmarc-analysis
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx     # or your gateway namespace
+        # OpenShift router:
+        # - namespaceSelector:
+        #     matchLabels:
+        #       network.openshift.io/policy-group: ingress
+      ports:
+        - port: 8080
+          protocol: TCP

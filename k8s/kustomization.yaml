@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Apply with: kubectl apply -k k8s/ -n <namespace>
+# secret.yaml is intentionally NOT listed – create the Secret out-of-band.
+# Swap ingress.yaml for httproute.yaml if you use the Gateway API.
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+  - ingress.yaml
+  # - httproute.yaml
+images:
+  - name: ghcr.io/jowe112/dmarc-analysis
+    newTag: "1.0.0"

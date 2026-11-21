@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dmarc-analysis-config
+  labels:
+    app.kubernetes.io/name: dmarc-analysis
+data:
+  # Non-sensitive settings only. Credentials live in the Secret.
+  PORT: "8080"
+  PGHOST: "postgres.database.svc.cluster.local"   # external PostgreSQL host
+  PGPORT: "5432"
+  PGDATABASE: "dmarc"
+  PGSSLMODE: "require"                             # disable | require | verify-full
+  PG_POOL_MAX: "10"
+  ALERT_THRESHOLD: "0.10"                          # alert when > 10 % of new mail fails
+  MAX_RECORDS: "5000"
+  BODY_LIMIT: "20mb"
