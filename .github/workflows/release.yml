@@ -80,7 +80,7 @@ jobs:
 
       # 1) Build amd64 locally and scan it: nothing is pushed unless Trivy passes.
       - name: Build image for scan
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
@@ -107,7 +107,7 @@ jobs:
       # 2) Multi-arch build and push (amd64 layers come from the cache above).
       - name: Build and push
         id: push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ env.PLATFORMS }}
