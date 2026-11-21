@@ -26,6 +26,7 @@ No Google Apps Script, no Gmail integration, no local SQLite, and no PVC.
 - [Kubernetes deployment](#kubernetes-deployment)
 - [Verifying with curl](#verifying-with-curl)
 - [Development and tests](#development-and-tests)
+- [Releasing](#releasing)
 - [Security](#security)
 
 ---
@@ -271,7 +272,11 @@ flowchart TB
 | `k8s/ingress.yaml` / `k8s/httproute.yaml` | Pick one (Ingress is enabled in the kustomization) |
 | `k8s/networkpolicy.yaml` | Pod ingress allowed only from the ingress/gateway namespace |
 
-### 1. Build and push the image
+### 1. Get the image
+
+Released images are published automatically to
+`ghcr.io/jowe112/dmarc-analysis:<version>` (see [Releasing](#releasing)). To build and push
+one manually instead:
 
 ```bash
 docker build --build-arg VERSION=1.0.0 -t ghcr.io/jowe112/dmarc-analysis:1.0.0 .
@@ -394,6 +399,43 @@ PGHOST=localhost PGUSER=dmarc PGPASSWORD=dmarc-local-only PGDATABASE=dmarc npm s
 CI (`.github/workflows/ci.yml`) runs unit and integration tests against a PostgreSQL service
 container, validates the manifests with kubeconform, builds the image, and scans it with Trivy.
 Path filters skip irrelevant jobs on pull requests.
+
+## Releasing
+
+Releases follow [SemVer](https://semver.org/).
+[`.github/workflows/release.yml`](.github/workflows/release.yml) publishes the image when a
+`vX.Y.Z` tag is pushed.
+
+```mermaid
+flowchart LR
+    T[git push tag vX.Y.Z] --> V{tag == package.json version?}
+    V -- no --> F[fail]
+    V -- yes --> B[build linux/amd64] --> S{Trivy HIGH/CRITICAL}
+    S -- findings --> F
+    S -- clean --> P[build amd64 + arm64<br/>push to GHCR<br/>with SBOM + provenance]
+```
+
+1. Bump `version` in `package.json` (and `package-lock.json`). Also bump the image tag in
+   `k8s/deployment.yaml` and `k8s/kustomization.yaml`, and the `VERSION` build arg in
+   `docker-compose.yml`. Add the release to `CHANGELOG.md`, then merge via PR.
+2. Tag the merge commit and push the tag:
+
+```bash
+git tag -a v1.1.0 -m "v1.1.0" && git push origin v1.1.0
+```
+
+The workflow pushes `ghcr.io/jowe112/dmarc-analysis:X.Y.Z`, `:X.Y` and `:latest`. Kubernetes
+manifests must always pin `X.Y.Z`.
+
+To publish a tag that already exists (for example `v1.0.0`, created before this workflow),
+run the workflow manually:
+
+```bash
+gh workflow run release.yml -f tag=v1.0.0
+```
+
+> GHCR creates a new package as **private**. Either make it public (Package settings →
+> Change visibility) or give the cluster an `imagePullSecret` with `read:packages` access.
 
 ## Security
 

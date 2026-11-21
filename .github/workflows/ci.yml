@@ -93,7 +93,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate manifests (kubeconform)
         run: |
-          docker run --rm -v "$PWD/k8s:/k8s:ro" ghcr.io/yannh/kubeconform:${KUBECONFORM_VERSION} \
+          docker run --rm -v "$PWD/k8s:/k8s:ro" "ghcr.io/yannh/kubeconform:${KUBECONFORM_VERSION}" \
             -strict -summary -ignore-missing-schemas -ignore-filename-pattern kustomization.yaml /k8s
 
   image:
@@ -116,6 +116,6 @@ jobs:
       - name: Trivy scan (HIGH/CRITICAL)
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:${TRIVY_VERSION} image \
+            "aquasec/trivy:${TRIVY_VERSION}" image \
             --severity HIGH,CRITICAL --exit-code 1 \
             dmarc-analysis:ci
