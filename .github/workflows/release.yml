@@ -76,7 +76,7 @@ jobs:
             org.opencontainers.image.version=${{ steps.tag.outputs.version }}
 
       - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # 1) Build amd64 locally and scan it: nothing is pushed unless Trivy passes.
       - name: Build image for scan
