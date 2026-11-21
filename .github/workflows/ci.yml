@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  TRIVY_VERSION: "0.69.3"
+  KUBECONFORM_VERSION: "v0.7.0"
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      node: ${{ steps.filter.outputs.node }}
+      k8s: ${{ steps.filter.outputs.k8s }}
+      image: ${{ steps.filter.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            node:
+              - '.github/workflows/ci.yml'
+              - 'src/**'
+              - 'public/**'
+              - 'test/**'
+              - 'examples/**'
+              - 'package.json'
+              - 'package-lock.json'
+            k8s:
+              - '.github/workflows/ci.yml'
+              - 'k8s/**'
+            image:
+              - '.github/workflows/ci.yml'
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'src/**'
+              - 'public/**'
+              - 'docs/openapi.yaml'
+              - 'package.json'
+              - 'package-lock.json'
+
+  node:
+    name: node
+    needs: changes
+    if: needs.changes.outputs.node == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: dmarc
+          POSTGRES_USER: dmarc
+          POSTGRES_PASSWORD: ci-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dmarc -d dmarc"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Audit (production deps)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Unit tests
+        run: npm test
+      - name: Integration tests
+        env:
+          TEST_DATABASE_URL: postgres://dmarc:ci-only@localhost:5432/dmarc
+        run: npm run test:integration
+
+  k8s:
+    name: k8s
+    needs: changes
+    if: needs.changes.outputs.k8s == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifests (kubeconform)
+        run: |
+          docker run --rm -v "$PWD/k8s:/k8s:ro" ghcr.io/yannh/kubeconform:${KUBECONFORM_VERSION} \
+            -strict -summary -ignore-missing-schemas -ignore-filename-pattern kustomization.yaml /k8s
+
+  image:
+    name: image
+    needs: changes
+    if: needs.changes.outputs.image == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: dmarc-analysis:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Trivy scan (HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:${TRIVY_VERSION} image \
+            --severity HIGH,CRITICAL --exit-code 1 \
+            dmarc-analysis:ci

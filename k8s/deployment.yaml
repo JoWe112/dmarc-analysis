@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dmarc-analysis
+  labels:
+    app.kubernetes.io/name: dmarc-analysis
+    app.kubernetes.io/version: "1.0.0"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dmarc-analysis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dmarc-analysis
+        app.kubernetes.io/version: "1.0.0"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # runAsUser: 1000   # leave unset: OpenShift assigns a UID, vanilla K8s uses the image USER
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: dmarc-analysis
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: app
+          image: ghcr.io/jowe112/dmarc-analysis:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: dmarc-analysis-config
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef: { name: dmarc-analysis-secret, key: PGUSER }
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: { name: dmarc-analysis-secret, key: PGPASSWORD }
+            - name: ALERT_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef: { name: dmarc-analysis-secret, key: ALERT_WEBHOOK_URL, optional: true }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: dmarc-analysis-secret, key: DATABASE_URL, optional: true }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            # Generous: a DB outage should mark pods unready, not crash-loop them immediately.
+            failureThreshold: 6
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 384Mi }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

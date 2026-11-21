@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DMARC-analys</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap">
+      <h1>DMARC-analys</h1>
+      <span class="muted" id="version"></span>
+      <a class="link" href="/docs">API-dokumentation</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Upload -->
+    <section class="card" aria-labelledby="upload-title">
+      <h2 id="upload-title">Läs in rapporter</h2>
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-describedby="drop-help">
+        <p><strong>Dra och släpp</strong> DMARC-rapporter här eller <label class="link" for="file-input">välj filer</label></p>
+        <p id="drop-help" class="muted">Stöder .xml, .zip och .gz (packas upp i webbläsaren)</p>
+        <input id="file-input" type="file" multiple accept=".xml,.zip,.gz,.gzip,application/xml,text/xml,application/zip,application/gzip" hidden>
+      </div>
+      <details class="paste">
+        <summary>…eller klistra in XML-text</summary>
+        <textarea id="xml-text" rows="8" placeholder="&lt;feedback&gt;…&lt;/feedback&gt;" spellcheck="false"></textarea>
+        <button id="paste-submit" class="btn">Skicka XML</button>
+      </details>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <!-- Filters -->
+    <section class="toolbar" aria-label="Filter">
+      <div class="segmented" role="group" aria-label="Tidsintervall">
+        <button data-days="7">7 dagar</button>
+        <button data-days="30" class="active">30 dagar</button>
+        <button data-days="90">90 dagar</button>
+        <button data-days="all">Allt</button>
+      </div>
+      <label class="check"><input type="checkbox" id="failed-only"> Endast underkända (DKIM/SPF)</label>
+      <input type="search" id="search" placeholder="Sök rapport-ID, IP, organisation, domän, policy…" aria-label="Sök">
+    </section>
+
+    <!-- KPIs -->
+    <section class="kpis" aria-label="Nyckeltal">
+      <div class="kpi"><span class="kpi-label">Totalt antal mejl</span><span class="kpi-value" id="kpi-total">–</span></div>
+      <div class="kpi"><span class="kpi-label">DMARC-godkänd</span><span class="kpi-value" id="kpi-dmarc">–</span></div>
+      <div class="kpi"><span class="kpi-label">DKIM pass</span><span class="kpi-value" id="kpi-dkim">–</span></div>
+      <div class="kpi"><span class="kpi-label">SPF pass</span><span class="kpi-value" id="kpi-spf">–</span></div>
+    </section>
+
+    <!-- Chart -->
+    <section class="card" aria-labelledby="chart-title">
+      <div class="card-head">
+        <h2 id="chart-title">Mejlvolym per dag</h2>
+        <div class="legend"><span class="sw pass"></span>Godkänd <span class="sw fail"></span>Underkänd</div>
+      </div>
+      <div id="chart" class="chart"></div>
+    </section>
+
+    <!-- Table -->
+    <section class="card" aria-labelledby="table-title">
+      <div class="card-head">
+        <h2 id="table-title">Poster</h2>
+        <span class="muted" id="row-count"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Datum</th><th>Organisation</th><th>Domän</th><th>Policy</th><th>Käll-IP</th>
+              <th class="num">Antal</th><th>Åtgärd</th><th>DKIM</th><th>SPF</th><th>Header From</th><th>Rapport-ID</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

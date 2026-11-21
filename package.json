@@ -1,0 +1,22 @@
+{
+  "name": "dmarc-analysis",
+  "version": "1.0.0",
+  "description": "Containerised DMARC aggregate-report analysis: web UI, REST API and external PostgreSQL storage.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "test:integration": "node --test test/integration/*.test.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "fast-xml-parser": "^5.2.5",
+    "pg": "^8.16.3"
+  }
+}

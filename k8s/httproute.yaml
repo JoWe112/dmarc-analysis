@@ -1,0 +1,20 @@
+# Option B: Gateway API HTTPRoute. Use EITHER this OR ingress.yaml.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: dmarc-analysis
+  labels:
+    app.kubernetes.io/name: dmarc-analysis
+spec:
+  parentRefs:
+    - name: main-gateway          # your Gateway
+      namespace: gateway-system
+      sectionName: https
+  hostnames:
+    - dmarc.example.com
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: / }
+      backendRefs:
+        - name: dmarc-analysis
+          port: 80

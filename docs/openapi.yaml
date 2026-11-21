@@ -1,0 +1,223 @@
+openapi: 3.0.3
+info:
+  title: DMARC-analys API
+  version: 1.0.0
+  description: |
+    Ingest and query DMARC aggregate reports (RFC 7489). Records are
+    deduplicated by a deterministic SHA-256 `record_hash`.
+
+    **Authentication:** the API has no built-in authentication. It must be
+    deployed behind an authenticating ingress controller / API gateway, and a
+    NetworkPolicy restricts pod ingress to that gateway (see `k8s/`).
+  license:
+    name: Apache-2.0
+servers:
+  - url: /
+security: []
+paths:
+  /healthz:
+    get:
+      summary: Health check (verifies PostgreSQL with SELECT 1)
+      operationId: health
+      responses:
+        '200':
+          description: Application and database are healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  database: { type: string, example: up }
+                  version: { type: string, example: 1.0.0 }
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/version:
+    get:
+      summary: Application version
+      operationId: version
+      responses:
+        '200':
+          description: Version
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string, example: 1.0.0 }
+  /api/reports:
+    post:
+      summary: Ingest DMARC records (raw XML or pre-parsed records)
+      description: |
+        Inserts records with `ON CONFLICT (record_hash) DO NOTHING`.
+        The failure rate (mail-weighted; a record fails when DKIM ≠ pass **and**
+        SPF ≠ pass) is computed over the *newly inserted* records. When that
+        overall rate exceeds `ALERT_THRESHOLD` (default 10 %), `alerts` lists
+        every (domain, policy) group with failed mail, and – if
+        `ALERT_WEBHOOK_URL` is set – the payload
+        `{ text, source, generatedAt, summary, alerts }` is POSTed to the webhook.
+      operationId: ingestReports
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Provide `xml`, `records`, or both.
+              properties:
+                xml:
+                  oneOf:
+                    - type: string
+                    - type: array
+                      maxItems: 1000
+                      items: { type: string }
+                  description: One or more raw DMARC aggregate XML documents
+                records:
+                  type: array
+                  items: { $ref: '#/components/schemas/RecordInput' }
+          application/xml:
+            schema:
+              type: string
+              description: A single raw DMARC aggregate XML document
+          text/xml:
+            schema: { type: string }
+      responses:
+        '200':
+          description: Processed; nothing new was inserted (all duplicates)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestResult' }
+        '201':
+          description: Processed; at least one new record inserted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IngestResult' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          description: Request body too large
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/records:
+    get:
+      summary: Query stored records
+      operationId: listRecords
+      parameters:
+        - name: days
+          in: query
+          schema: { type: string, enum: ['7', '30', '90', all], default: '30' }
+          description: Only records with report_date within the last N days
+        - name: failedOnly
+          in: query
+          schema: { type: string, enum: ['true', 'false'], default: 'false' }
+          description: Only records where DKIM ≠ pass and SPF ≠ pass
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 200 }
+          description: Case-insensitive substring match on report_id, source_ip, reporting_org, domain and policy
+      responses:
+        '200':
+          description: Matching records, newest first (capped at MAX_RECORDS)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  limit: { type: integer }
+                  records:
+                    type: array
+                    items: { $ref: '#/components/schemas/Record' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  schemas:
+    RecordInput:
+      type: object
+      required: [report_date]
+      properties:
+        report_date: { type: string, format: date, example: '2026-11-20' }
+        report_id: { type: string }
+        reporting_org: { type: string }
+        domain: { type: string }
+        policy: { type: string, example: reject }
+        source_ip: { type: string }
+        mail_count: { type: integer, minimum: 0 }
+        disposition: { type: string, example: none }
+        dkim_result: { type: string, example: pass }
+        spf_result: { type: string, example: fail }
+        header_from: { type: string }
+    Record:
+      allOf:
+        - $ref: '#/components/schemas/RecordInput'
+        - type: object
+          properties:
+            id: { type: integer }
+            record_hash: { type: string }
+            created_at: { type: string, format: date-time }
+    Alert:
+      type: object
+      properties:
+        domain: { type: string }
+        policy: { type: string }
+        reportIds: { type: array, items: { type: string } }
+        failedRate: { type: number, example: 0.25 }
+        failedPercent: { type: number, example: 25 }
+        totalMails: { type: integer }
+        failedMails: { type: integer }
+        threshold: { type: number }
+        topIps:
+          type: array
+          items:
+            type: object
+            properties:
+              ip: { type: string }
+              failedMails: { type: integer }
+    IngestResult:
+      type: object
+      properties:
+        received: { type: integer, description: Records parsed from the request }
+        inserted: { type: integer, description: New rows written }
+        duplicates: { type: integer, description: Records ignored as already stored (or repeated in the request) }
+        uniqueInRequest: { type: integer }
+        failedMails: { type: integer }
+        totalMails: { type: integer }
+        failedRate: { type: number }
+        failedPercent: { type: number }
+        threshold: { type: number }
+        alertTriggered: { type: boolean }
+        alertSent: { type: boolean }
+        alerts: { type: array, items: { $ref: '#/components/schemas/Alert' } }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: VALIDATION_FAILED }
+            message: { type: string }
+  responses:
+    BadRequest:
+      description: Malformed request or validation failed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Internal:
+      description: Internal server error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unavailable:
+      description: Database not reachable
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
