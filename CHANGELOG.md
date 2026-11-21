@@ -6,6 +6,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Release workflow (`.github/workflows/release.yml`): on a `vX.Y.Z` tag (or manual run for an
+  existing tag), it verifies the tag matches `package.json`, Trivy-scans the image, and pushes a
+  multi-arch (`amd64`, `arm64`) image with SBOM and provenance to `ghcr.io/jowe112/dmarc-analysis`.
+
 ## [1.0.0] - 2026-11-21
 
 ### Added
