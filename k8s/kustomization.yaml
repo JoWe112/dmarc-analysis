@@ -12,4 +12,4 @@ resources:
   # - httproute.yaml
 images:
   - name: ghcr.io/jowe112/dmarc-analysis
-    newTag: "1.0.0"
+    newTag: "2.0.0"

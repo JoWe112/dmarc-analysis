@@ -1,24 +1,40 @@
 openapi: 3.0.3
 info:
   title: DMARC-analys API
-  version: 1.0.0
+  version: 2.0.0
   description: |
     Ingest and query DMARC aggregate reports (RFC 7489). Records are
     deduplicated by a deterministic SHA-256 `record_hash`.
 
-    **Authentication:** the API has no built-in authentication. It must be
-    deployed behind an authenticating ingress controller / API gateway, and a
-    NetworkPolicy restricts pod ingress to that gateway (see `k8s/`).
+    **Authentication:** built into the application using OpenID Connect.
+    Every endpoint except `/healthz` and the `/auth/login` and
+    `/auth/callback` login flow requires one of:
+
+    - **`sessionCookie`**: set after a browser signs in through `/auth/login`.
+      State-changing requests that use the cookie must be same-origin (the
+      `Origin` header must equal `APP_BASE_URL`), otherwise they get
+      `403 CSRF_REJECTED`.
+    - **`bearerAuth`**: an access token (JWT) from the configured provider,
+      verified against its JWKS and issuer. Its `azp` must equal
+      `OIDC_CLIENT_ID`, or its `aud` must contain `OIDC_AUDIENCE` when that
+      is set.
+
+    If `OIDC_REQUIRED_ROLE` is set, users without that role in
+    `OIDC_ROLE_CLAIM` get `403 FORBIDDEN`.
   license:
     name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
 servers:
   - url: /
-security: []
+security:
+  - bearerAuth: []
+  - sessionCookie: []
 paths:
   /healthz:
     get:
       summary: Health check (verifies PostgreSQL with SELECT 1)
       operationId: health
+      security: []
       responses:
         '200':
           description: Application and database are healthy
@@ -29,9 +45,84 @@ paths:
                 properties:
                   status: { type: string, example: ok }
                   database: { type: string, example: up }
-                  version: { type: string, example: 1.0.0 }
+                  version: { type: string, example: 2.0.0 }
         '503':
           $ref: '#/components/responses/Unavailable'
+  /auth/login:
+    get:
+      summary: Start browser sign-in (authorization code flow with PKCE)
+      operationId: login
+      security: []
+      parameters:
+        - name: returnTo
+          in: query
+          schema: { type: string, example: '/?days=7' }
+          description: Local path to return to after sign-in. Anything else is replaced with `/`.
+      responses:
+        '302':
+          description: Redirect to the provider's authorization endpoint (sets a short-lived login-transaction cookie)
+        '503':
+          $ref: '#/components/responses/IdpUnavailable'
+  /auth/callback:
+    get:
+      summary: OIDC redirect URI (completes sign-in)
+      operationId: callback
+      security: []
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+      responses:
+        '302':
+          description: Signed in; sets the session cookie and redirects to `returnTo`
+        '400':
+          description: Login transaction missing or expired (`LOGIN_EXPIRED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: Code exchange or token validation failed (`LOGIN_FAILED`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/IdpUnavailable'
+  /auth/me:
+    get:
+      summary: The signed-in user
+      operationId: me
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /auth/logout:
+    post:
+      summary: Sign out
+      description: |
+        Clears the session cookie and returns the URL the browser should open
+        to also end the session at the provider (RP-initiated logout). With
+        cookie authentication the request must be same-origin.
+      operationId: logout
+      responses:
+        '200':
+          description: Session cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redirect: { type: string, format: uri }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/version:
     get:
       summary: Application version
@@ -44,7 +135,11 @@ paths:
               schema:
                 type: object
                 properties:
-                  version: { type: string, example: 1.0.0 }
+                  version: { type: string, example: 2.0.0 }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/reports:
     post:
       summary: Ingest DMARC records (raw XML or pre-parsed records)
@@ -94,6 +189,10 @@ paths:
               schema: { $ref: '#/components/schemas/IngestResult' }
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '413':
           description: Request body too large
           content:
@@ -135,12 +234,35 @@ paths:
                     items: { $ref: '#/components/schemas/Record' }
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/Internal'
         '503':
           $ref: '#/components/responses/Unavailable'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token issued by the configured OpenID Connect provider
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-dmarc_session
+      description: Encrypted session cookie set by `/auth/callback` (named `dmarc_session` when APP_BASE_URL is plain http on localhost)
   schemas:
+    User:
+      type: object
+      properties:
+        sub: { type: string }
+        name: { type: string }
+        username: { type: string }
+        email: { type: string }
+        roles: { type: array, items: { type: string } }
     RecordInput:
       type: object
       required: [report_date]
@@ -217,7 +339,25 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     Unavailable:
-      description: Database not reachable
+      description: Database (`DATABASE_UNAVAILABLE`) or identity provider (`IDENTITY_PROVIDER_UNAVAILABLE`) not reachable
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: "Missing, invalid or expired credentials (`UNAUTHENTICATED`, `INVALID_TOKEN`). Includes `WWW-Authenticate: Bearer`."
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, example: Bearer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated but missing the required role (`FORBIDDEN`), or cross-origin cookie request (`CSRF_REJECTED`)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    IdpUnavailable:
+      description: Identity provider not reachable (`IDENTITY_PROVIDER_UNAVAILABLE`)
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

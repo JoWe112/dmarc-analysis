@@ -1,0 +1,56 @@
+{
+  "realm": "dmarc",
+  "displayName": "DMARC-analys (local development)",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "roles": {
+    "realm": [
+      { "name": "dmarc-viewer", "description": "May sign in to DMARC-analys and ingest/view reports" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "dmarc-analysis",
+      "name": "DMARC-analys",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "local-dev-changeme-client-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:8080/auth/callback"],
+      "webOrigins": ["http://localhost:8080"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8080/"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "analyst",
+      "enabled": true,
+      "email": "analyst@example.test",
+      "emailVerified": true,
+      "firstName": "Anna",
+      "lastName": "Analytiker",
+      "realmRoles": ["default-roles-dmarc", "dmarc-viewer"],
+      "credentials": [{ "type": "password", "value": "changeme-analyst", "temporary": false }]
+    },
+    {
+      "username": "outsider",
+      "enabled": true,
+      "email": "outsider@example.test",
+      "emailVerified": true,
+      "firstName": "Otto",
+      "lastName": "Utomstående",
+      "realmRoles": ["default-roles-dmarc"],
+      "credentials": [{ "type": "password", "value": "changeme-outsider", "temporary": false }]
+    }
+  ]
+}

@@ -13,6 +13,48 @@ const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('sv-SE');
 const MAX_BATCH_BYTES = 8 * 1024 * 1024; // keep requests below the server body limit
 
+/* ---------- Authenticated fetch ---------- */
+
+/**
+ * fetch() for our own API. The session cookie is sent automatically
+ * (same-origin). A 401 means the session expired: restart the login flow and
+ * come back to the current page afterwards.
+ */
+async function api(url, options = {}) {
+  const res = await fetch(url, { credentials: 'same-origin', ...options });
+  if (res.status === 401) {
+    location.assign(`/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`);
+    throw new Error('Sessionen har gått ut – loggar in igen…');
+  }
+  return res;
+}
+
+/** Show the signed-in user and wire the logout button. */
+async function initUser() {
+  try {
+    const res = await api('/auth/me');
+    if (!res.ok) return;
+    const me = await res.json();
+    const el = $('user');
+    el.textContent = me.name || me.username || me.email || me.sub;
+    el.title = me.email || '';
+    el.hidden = false;
+    $('logout').hidden = false;
+  } catch {
+    /* redirecting to login */
+  }
+}
+
+async function logout() {
+  try {
+    const res = await api('/auth/logout', { method: 'POST' });
+    const body = await res.json();
+    location.assign(body.redirect || '/');
+  } catch {
+    location.assign('/');
+  }
+}
+
 /* ---------- Archive handling ---------- */
 
 /** Inflate bytes with a native DecompressionStream format. */
@@ -93,7 +135,7 @@ async function submitXml(docs) {
   let size = 0;
   const flush = async () => {
     if (!batch.length) return;
-    const res = await fetch('/api/reports', {
+    const res = await api('/api/reports', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ xml: batch }),
@@ -177,7 +219,7 @@ async function loadRecords() {
   const params = new URLSearchParams({ days: state.days, failedOnly: String(state.failedOnly) });
   if (state.q) params.set('q', state.q);
   try {
-    const res = await fetch(`/api/records?${params}`);
+    const res = await api(`/api/records?${params}`);
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ? body.error.message : `HTTP ${res.status}`);
     if (seq !== loadSeq) return;
@@ -334,6 +376,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.addEventListener('resize', debounce(() => renderChart(lastRecords), 150));
 
-  fetch('/api/version').then((r) => r.json()).then((v) => { $('version').textContent = `v${v.version}`; }).catch(() => {});
+  $('logout').addEventListener('click', logout);
+  initUser();
+  api('/api/version').then((r) => r.json()).then((v) => { $('version').textContent = `v${v.version}`; }).catch(() => {});
   loadRecords();
 });

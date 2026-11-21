@@ -33,7 +33,14 @@ body {
 .topbar { background: var(--surface); border-bottom: 1px solid var(--border); }
 .topbar .wrap { display: flex; align-items: center; gap: 12px; height: 56px; }
 .topbar h1 { font-size: 18px; margin: 0; }
-.topbar .link { margin-left: auto; }
+.topnav { margin-left: auto; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.topnav .user { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30vw; }
+.btn-ghost {
+  background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.btn-ghost:hover { border-color: var(--accent); }
+@media (max-width: 520px) { .topnav .link, .topnav .user { display: none; } }
 h2 { font-size: 16px; margin: 0 0 12px; }
 main { padding: 20px 16px 40px; display: grid; gap: 16px; }
 .muted { color: var(--muted); font-size: 13px; }

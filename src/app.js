@@ -18,11 +18,18 @@ function sendError(res, status, code, message) {
 
 /**
  * Build the Express application. Dependencies are injected so integration
- * tests can supply their own pool / config.
+ * tests can supply their own pool / config / auth (e.g. against a mock IdP).
  *
- * @param {{ pool: import('pg').Pool, config: object }} deps
+ * Route order matters:
+ *   1. security headers
+ *   2. public: /healthz and the /auth/* login flow
+ *   3. auth.requireAuth – everything below needs a session cookie or bearer token
+ *   4. body parsers (so unauthenticated bodies are never parsed), API, docs, static UI
+ *
+ * @param {{ pool: import('pg').Pool, config: object, auth: ReturnType<import('./auth').createAuth> }} deps
  */
-function createApp({ pool, config }) {
+function createApp({ pool, config, auth }) {
+  if (!auth) throw new Error('createApp requires an auth component');
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', true); // runs behind an ingress / gateway
@@ -39,10 +46,7 @@ function createApp({ pool, config }) {
     next();
   });
 
-  app.use(express.json({ limit: config.bodyLimit }));
-  app.use(express.text({ type: ['application/xml', 'text/xml', 'text/plain'], limit: config.bodyLimit }));
-
-  /** Liveness/readiness: 200 only when PostgreSQL answers SELECT 1. */
+  /** Liveness/readiness (public): 200 only when PostgreSQL answers SELECT 1. */
   app.get('/healthz', async (req, res) => {
     try {
       await pool.query('SELECT 1');
@@ -52,6 +56,15 @@ function createApp({ pool, config }) {
       sendError(res, 503, 'DATABASE_UNAVAILABLE', 'The database is not reachable.');
     }
   });
+
+  // OIDC login/callback (public), /auth/me and /auth/logout (protected inside the router).
+  app.use('/auth', auth.router);
+
+  // Everything registered after this line requires authentication.
+  app.use(auth.requireAuth);
+
+  app.use(express.json({ limit: config.bodyLimit }));
+  app.use(express.text({ type: ['application/xml', 'text/xml', 'text/plain'], limit: config.bodyLimit }));
 
   app.get('/api/version', (req, res) => res.json({ version: config.version }));
 
@@ -121,10 +134,13 @@ function createApp({ pool, config }) {
   app.use(express.static(PUBLIC_DIR, { index: 'index.html', maxAge: 0 }));
 
   app.use('/api', (req, res) => sendError(res, 404, 'NOT_FOUND', 'Resource not found.'));
+  app.use((req, res) => sendError(res, 404, 'NOT_FOUND', 'Resource not found.'));
 
   // Central error handler: never leak internals.
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
+    // Auth errors (401/403/400/503) already carry a safe code and message.
+    if (err instanceof auth.AuthError) return sendError(res, err.status, err.code, err.message);
     if (err.type === 'entity.parse.failed') return sendError(res, 400, 'MALFORMED_REQUEST', 'Malformed JSON body.');
     if (err.code === 'VALIDATION_FAILED') return sendError(res, 400, err.code, err.message);
     if (err.status === 400) return sendError(res, 400, 'MALFORMED_REQUEST', 'Malformed request.');

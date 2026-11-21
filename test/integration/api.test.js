@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Pool } = require('pg');
 const { migrate } = require('../../src/db');
-const { createApp } = require('../../src/app');
+const { startHarness } = require('../helpers/app-harness');
 
 const url = process.env.TEST_DATABASE_URL;
 const SAMPLE = fs.readFileSync(path.join(__dirname, '..', '..', 'examples', 'sample-report.xml'), 'utf8');
@@ -35,17 +35,20 @@ test('API against PostgreSQL', { skip: !url && 'TEST_DATABASE_URL not set' }, as
   });
   await new Promise((r) => hook.listen(0, '127.0.0.1', r));
 
-  const config = {
-    version: 'test', bodyLimit: '5mb', maxRecords: 100, alertThreshold: 0.1, alertTimeoutMs: 2000,
-    alertWebhookUrl: `http://127.0.0.1:${hook.address().port}/`,
-  };
-  const server = createApp({ pool, config }).listen(0);
-  const base = `http://127.0.0.1:${server.address().port}`;
+  // Real app + real PostgreSQL + mock OIDC provider; API calls use a bearer token.
+  const h = await startHarness({
+    pool,
+    config: { alertWebhookUrl: `http://127.0.0.1:${hook.address().port}/`, maxRecords: 100 },
+  });
+  const base = h.base;
+  const token = await h.idp.issueAccessToken();
+  const authz = { authorization: `Bearer ${token}` };
   const post = (body, type = 'application/json') =>
-    fetch(`${base}/api/reports`, { method: 'POST', headers: { 'content-type': type }, body });
+    fetch(`${base}/api/reports`, { method: 'POST', headers: { 'content-type': type, ...authz }, body });
+  const get = async (qs) => (await (await fetch(`${base}/api/records?${qs}`, { headers: authz })).json());
 
   t.after(async () => {
-    server.close();
+    await h.close();
     hook.close();
     await pool.query(`DROP SCHEMA ${SCHEMA} CASCADE`);
     await pool.end();
@@ -93,7 +96,6 @@ test('API against PostgreSQL', { skip: !url && 'TEST_DATABASE_URL not set' }, as
   });
 
   await t.test('records filters', async () => {
-    const get = async (qs) => (await (await fetch(`${base}/api/records?${qs}`)).json());
     assert.equal((await get('days=all')).count, 4);
     assert.equal((await get('days=all&failedOnly=true')).count, 2);
     assert.equal((await get('days=all&q=198.51.100')).count, 2);
@@ -106,7 +108,7 @@ test('API against PostgreSQL', { skip: !url && 'TEST_DATABASE_URL not set' }, as
   });
 
   await t.test('validation errors use the error envelope', async () => {
-    let res = await fetch(`${base}/api/records?days=5`);
+    let res = await fetch(`${base}/api/records?days=5`, { headers: authz });
     assert.equal(res.status, 400);
     assert.equal((await res.json()).error.code, 'VALIDATION_FAILED');
     res = await post('{not json');
@@ -114,7 +116,7 @@ test('API against PostgreSQL', { skip: !url && 'TEST_DATABASE_URL not set' }, as
     assert.equal((await res.json()).error.code, 'MALFORMED_REQUEST');
     res = await post('<nope/>', 'application/xml');
     assert.equal(res.status, 400);
-    res = await fetch(`${base}/api/unknown`);
+    res = await fetch(`${base}/api/unknown`, { headers: authz });
     assert.equal(res.status, 404);
   });
 });

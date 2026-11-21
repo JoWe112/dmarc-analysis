@@ -1,5 +1,11 @@
-# Local test stack: the app + a PostgreSQL instance standing in for the external database.
-# In Kubernetes the database is external; nothing here is deployed there.
+# Local test stack: the app, a PostgreSQL standing in for the external database,
+# and a Keycloak acting as the OpenID Connect provider (realm: dev/keycloak/).
+# In Kubernetes the database and the identity provider are external; nothing
+# here is deployed there. All credentials below are LOCAL DEVELOPMENT values.
+#
+# Keycloak is reached as http://keycloak.localhost:8081 both by your browser
+# (*.localhost resolves to 127.0.0.1) and by the app container (network alias),
+# so the token issuer URL is identical from both sides.
 services:
   postgres:
     image: postgres:17-alpine@sha256:526f86d93c6ea08fd3f1fe5605650cacc781b2c6013169a0ad8f42c7d3d84f32
@@ -9,20 +15,48 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dmarc-local-only}
     ports:
       - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dmarc -d dmarc"]
       interval: 5s
       timeout: 3s
       retries: 20
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4@sha256:9409c59bdfb65dbffa20b11e6f18b8abb9281d480c7ca402f51ed3d5977e6007
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-changeme-admin}
+      KC_HTTP_PORT: "8081"
+      KC_HOSTNAME: http://keycloak.localhost:8081
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./dev/keycloak:/opt/keycloak/data/import:ro
+    ports:
+      - "127.0.0.1:8081:8081"
+    networks:
+      default:
+        aliases: [keycloak.localhost]
+    healthcheck:
+      # No curl in the image: speak HTTP to the management port with bash.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+
   app:
     build:
       context: .
       args:
-        VERSION: 1.0.0
-    image: dmarc-analysis:1.0.0
+        VERSION: 2.0.0
+    image: dmarc-analysis:2.0.0
     depends_on:
       postgres:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     environment:
       PORT: "8080"
@@ -35,6 +69,13 @@ services:
       # Alternatively: DATABASE_URL: postgres://dmarc:...@postgres:5432/dmarc?sslmode=disable
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
       ALERT_THRESHOLD: "0.10"
+      # Authentication (OpenID Connect)
+      APP_BASE_URL: http://localhost:8080
+      OIDC_ISSUER_URL: http://keycloak.localhost:8081/realms/dmarc
+      OIDC_CLIENT_ID: dmarc-analysis
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-local-dev-changeme-client-secret}
+      OIDC_REQUIRED_ROLE: dmarc-viewer
+      SESSION_SECRET: ${SESSION_SECRET:-local-dev-changeme-session-secret-0123456789}
     ports:
       - "8080:8080"
     read_only: true
@@ -49,3 +90,6 @@ services:
       timeout: 5s
       start_period: 20s
       retries: 3
+
+volumes:
+  pgdata:

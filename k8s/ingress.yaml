@@ -1,6 +1,7 @@
 # Option A: classic Ingress. Use EITHER this OR httproute.yaml.
-# The application has no built-in authentication – put an authenticating
-# proxy in front (e.g. oauth2-proxy via the annotations below).
+# Authentication is handled by the application itself (OIDC). The host here
+# must match APP_BASE_URL in the ConfigMap, and TLS must terminate here so
+# session cookies are marked Secure.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -9,8 +10,6 @@ metadata:
     app.kubernetes.io/name: dmarc-analysis
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "20m"
-    # nginx.ingress.kubernetes.io/auth-url: "https://oauth2.example.com/oauth2/auth"
-    # nginx.ingress.kubernetes.io/auth-signin: "https://oauth2.example.com/oauth2/start?rd=$escaped_request_uri"
 spec:
   ingressClassName: nginx
   tls:
