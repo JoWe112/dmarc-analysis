@@ -4,7 +4,7 @@ metadata:
   name: dmarc-analysis
   labels:
     app.kubernetes.io/name: dmarc-analysis
-    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/version: "2.0.0"
 spec:
   replicas: 2
   revisionHistoryLimit: 5
@@ -20,7 +20,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: dmarc-analysis
-        app.kubernetes.io/version: "1.0.0"
+        app.kubernetes.io/version: "2.0.0"
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -38,7 +38,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: app
-          image: ghcr.io/jowe112/dmarc-analysis:1.0.0
+          image: ghcr.io/jowe112/dmarc-analysis:2.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -53,6 +53,12 @@ spec:
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef: { name: dmarc-analysis-secret, key: PGPASSWORD }
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: { name: dmarc-analysis-secret, key: OIDC_CLIENT_SECRET }
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef: { name: dmarc-analysis-secret, key: SESSION_SECRET }
             - name: ALERT_WEBHOOK_URL
               valueFrom:
                 secretKeyRef: { name: dmarc-analysis-secret, key: ALERT_WEBHOOK_URL, optional: true }

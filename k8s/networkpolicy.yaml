@@ -1,6 +1,8 @@
-# Authentication is offloaded to the ingress controller / gateway. This policy
-# ensures the pods are only reachable through it (plus kubelet probes, which
-# are not subject to NetworkPolicy). Adjust the namespace labels to your cluster.
+# Defence in depth: the application authenticates every request itself (OIDC),
+# but the pods should still only be reachable through the ingress controller /
+# gateway (plus kubelet probes, which are not subject to NetworkPolicy).
+# Egress is not restricted: the pods need PostgreSQL, the OIDC provider and
+# the alert webhook. Adjust the namespace labels to your cluster.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

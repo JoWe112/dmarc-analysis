@@ -68,6 +68,24 @@ const config = {
   alertTimeoutMs: intEnv('ALERT_TIMEOUT_MS', 5000, 100),
   // Hard cap on rows returned by GET /api/records.
   maxRecords: intEnv('MAX_RECORDS', 5000, 1),
+
+  // Built-in OpenID Connect authentication (validated in src/auth/index.js).
+  auth: {
+    issuerUrl: process.env.OIDC_ISSUER_URL || '',
+    clientId: process.env.OIDC_CLIENT_ID || '',
+    clientSecret: process.env.OIDC_CLIENT_SECRET || '',
+    // Optional: required `aud` value for bearer tokens. Unset → `azp` must equal the client ID.
+    audience: process.env.OIDC_AUDIENCE || '',
+    scopes: process.env.OIDC_SCOPES || 'openid profile email',
+    // Optional: users must have this role/group. Empty → any authenticated user.
+    requiredRole: process.env.OIDC_REQUIRED_ROLE || '',
+    // Dotted claim path holding roles/groups (Keycloak realm roles by default).
+    roleClaim: process.env.OIDC_ROLE_CLAIM || 'realm_access.roles',
+    // Public URL of this app; redirect URI = APP_BASE_URL + /auth/callback.
+    baseUrl: process.env.APP_BASE_URL || '',
+    sessionSecret: process.env.SESSION_SECRET || '',
+    sessionTtlSeconds: intEnv('SESSION_TTL_SECONDS', 28800, 60),
+  },
 };
 
 module.exports = { config, sslFromMode };

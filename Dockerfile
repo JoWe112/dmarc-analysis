@@ -11,7 +11,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean -
 # ---- Stage 2: minimal runtime ----
 FROM ${NODE_IMAGE}
 
-ARG VERSION=1.0.0
+ARG VERSION=2.0.0
 LABEL org.opencontainers.image.title="dmarc-analysis" \
       org.opencontainers.image.description="DMARC aggregate report analysis (web UI + REST API, PostgreSQL)" \
       org.opencontainers.image.version="${VERSION}" \

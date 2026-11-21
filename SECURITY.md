@@ -14,11 +14,18 @@ reproduce, affected version, and impact.
 
 ## Security model (summary)
 
-- The application has **no built-in authentication**. It must run behind an
-  authenticating ingress controller / API gateway; `k8s/networkpolicy.yaml`
-  restricts pod ingress to that gateway.
-- Database credentials and the alert webhook URL are read from a Kubernetes
-  `Secret` and are never logged.
+- The application **authenticates users itself with OpenID Connect**: an
+  authorization code flow with PKCE for the UI, and bearer access tokens for the
+  API. Everything except `/healthz` and the login endpoints requires
+  authentication, and an optional role restricts access further. See
+  [docs/authentication.md](docs/authentication.md).
+- Sessions are encrypted (JWE A256GCM), `HttpOnly`, `SameSite=Lax` cookies.
+  Over https they are also `Secure` and `__Host-` prefixed.
+  Cookie-authenticated state-changing requests must be same-origin.
+- `k8s/networkpolicy.yaml` additionally limits pod ingress to the ingress
+  controller / gateway (defence in depth).
+- Database credentials, the OIDC client secret, the session secret and the
+  alert webhook URL are read from a Kubernetes `Secret` and are never logged.
 - DMARC reports contain IP addresses and domain names of mail senders; treat the
   database as containing operational/personal data and restrict access to it.
 - XML is parsed with entity processing disabled; request bodies are size-limited.
