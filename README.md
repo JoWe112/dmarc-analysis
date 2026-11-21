@@ -434,8 +434,10 @@ run the workflow manually:
 gh workflow run release.yml -f tag=v1.0.0
 ```
 
-> GHCR creates a new package as **private**. Either make it public (Package settings →
-> Change visibility) or give the cluster an `imagePullSecret` with `read:packages` access.
+> The workflow pushes with `GITHUB_TOKEN`, so the package is linked to this repository and
+> **inherits its visibility**. The repository is public, so the image can be pulled
+> anonymously and the cluster needs no `imagePullSecret`. If the repository is ever made
+> private, add an `imagePullSecret` with `read:packages` access to the Deployment.
 
 ## Security
 
